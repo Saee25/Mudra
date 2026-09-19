@@ -1,5 +1,6 @@
 import { buildLandmarkInput } from './landmarkInput.js';
 import { computeCropBox } from './handCrop.js';
+import { loadModel, predict } from './modelInference.js';
 
 /**
  * Dev-only unit test runner to verify JS preprocessing perfectly matches Python.
@@ -97,10 +98,56 @@ export async function runParityCheck() {
 
         console.table(results);
         
+        // ------------- ONNX Model Parity Check -------------
+        console.log('Running ONNX model parity checks...');
+        const samplesRes = await fetch(`${import.meta.env.BASE_URL}model/parity_samples.json`);
+        if (!samplesRes.ok) {
+            console.warn('parity_samples.json not found, skipping full model parity check.');
+            return;
+        }
+        const paritySamples = await samplesRes.json();
+        
+        await loadModel();
+        
+        const modelResults = [];
+        for (const sample of paritySamples) {
+            // Reconstruct the nested mediapipe-like output
+            // Each sample.raw_landmarks is an array of dicts {x, y, z}.
+            // Note: the training script exports it as an array of hands.
+            const jsInput = buildLandmarkInput(sample.raw_landmarks, sample.frame_width, sample.frame_height);
+            
+            const { probabilities } = await predict(jsInput);
+            
+            let maxDiff = 0;
+            for (let i = 0; i < probabilities.length; i++) {
+                const diff = Math.abs(probabilities[i] - sample.py_probs[i]);
+                if (diff > maxDiff) maxDiff = diff;
+            }
+            
+            // Top 1 agreement
+            let jsTop1Idx = 0, pyTop1Idx = 0;
+            for (let i = 1; i < probabilities.length; i++) {
+                if (probabilities[i] > probabilities[jsTop1Idx]) jsTop1Idx = i;
+                if (sample.py_probs[i] > sample.py_probs[pyTop1Idx]) pyTop1Idx = i;
+            }
+            const top1Match = jsTop1Idx === pyTop1Idx;
+            
+            const passed = maxDiff < 1e-4 && top1Match;
+            if (!passed) allPassed = false;
+            
+            modelResults.push({
+                File: sample.file.substring(0, 20) + '...',
+                MaxDiff: maxDiff.toExponential(2),
+                Top1Match: top1Match ? '✅' : '❌'
+            });
+        }
+        
+        console.table(modelResults);
+
         if (allPassed) {
-            console.log('%cParity Check Passed!', 'color: green; font-weight: bold;');
+            console.log('%cMudra parity check: PASS', 'color: green; font-weight: bold;');
         } else {
-            console.error('Parity Check Failed! Check console table for details.');
+            console.error('Mudra parity check: FAIL! Check console table for details.');
         }
 
     } catch (err) {
