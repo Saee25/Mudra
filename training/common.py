@@ -16,6 +16,8 @@ BLOCK_SIZE = 50
 IMG_SIZE = 224
 MIRROR_AUGMENT = True
 
+COLLECTED_HOLDOUT_SIGNERS = []
+
 def get_base_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--data-dir", type=str, default="data", help="Path to data dir")
@@ -126,6 +128,49 @@ def resolve_classes_and_split(npz_path, outputs_dir, smoke_test=False):
 
     return class_names, train_paths, val_paths
 
+def resolve_collected_split(npz_path, outputs_dir, holdout_signers=None):
+    if holdout_signers is None:
+        holdout_signers = set(COLLECTED_HOLDOUT_SIGNERS)
+    else:
+        holdout_signers = set(holdout_signers)
+        
+    data = np.load(npz_path)
+    labels = data["labels"]
+    signers = data["signer_id"]
+    sessions = data["session_id"]
+    
+    train_indices = []
+    test_indices = []
+    
+    unique_signers = np.unique(signers)
+    
+    if len(unique_signers) == 1 and not holdout_signers:
+        print("WARNING: Only one signer found in collected data. Holding out by session instead. This is weaker evidence than an unseen signer.")
+        test_sessions = set()
+        labels_seen = set()
+        for i in range(len(labels)):
+            if labels[i] not in labels_seen:
+                test_sessions.add(sessions[i])
+                labels_seen.add(labels[i])
+                
+        for i in range(len(labels)):
+            if sessions[i] in test_sessions:
+                test_indices.append(i)
+            else:
+                train_indices.append(i)
+    else:
+        for i in range(len(labels)):
+            if signers[i] in holdout_signers:
+                test_indices.append(i)
+            else:
+                train_indices.append(i)
+                
+    split_path = os.path.join(outputs_dir, "collected_split.json")
+    with open(split_path, "w") as f:
+        json.dump({"train_indices": train_indices, "test_indices": test_indices}, f, indent=2)
+        
+    return train_indices, test_indices
+
 def augment_landmarks(landmarks, mask, frame_w, frame_h, rng):
     """
     Applies augmentation to PIXEL coordinates before the model's normalization.
@@ -210,6 +255,34 @@ class LandmarkDataset(Dataset):
         
         # Map string labels to current class_names index
         labels_str = data["labels"][valid_idx]
+        name_to_idx = {name: i for i, name in enumerate(class_names)}
+        self.labels = np.array([name_to_idx[l] for l in labels_str], dtype=np.int64)
+        
+        self.is_train = is_train
+        self.rng = np.random.RandomState(SEED) if is_train else None
+        
+    def __len__(self):
+        return len(self.landmarks)
+        
+    def __getitem__(self, idx):
+        lms = self.landmarks[idx]
+        mask = self.hand_mask[idx]
+        
+        if self.is_train:
+            lms, mask = augment_landmarks(lms, mask, self.frame_w[idx], self.frame_h[idx], self.rng)
+            
+        return torch.from_numpy(lms), torch.from_numpy(mask), self.labels[idx]
+
+class CollectedLandmarkDataset(Dataset):
+    def __init__(self, npz_path, allowed_indices, class_names, is_train=False):
+        data = np.load(npz_path)
+        
+        self.landmarks = data["landmarks"][allowed_indices]
+        self.hand_mask = data["hand_mask"][allowed_indices]
+        self.frame_w = data["frame_w"][allowed_indices]
+        self.frame_h = data["frame_h"][allowed_indices]
+        
+        labels_str = data["labels"][allowed_indices]
         name_to_idx = {name: i for i, name in enumerate(class_names)}
         self.labels = np.array([name_to_idx[l] for l in labels_str], dtype=np.int64)
         

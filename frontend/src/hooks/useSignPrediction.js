@@ -185,7 +185,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
             if (results) {
                 const inputData = buildLandmarkInput(results.rawLandmarks, results.frameWidth, results.frameHeight);
                 latestInputRef.current = inputData;
-                setLastInput({ raw: results.rawLandmarks, built: inputData });
+                setLastInput({ raw: results.rawLandmarks, handedness: results.handedness, built: inputData });
                 setHandsCount(inputData.slots);
 
                 // Draw skeleton (unmirrored data, onto mirrored canvas)

@@ -9,7 +9,8 @@ from tqdm import tqdm
 
 from common import (
     get_base_parser, set_seed, get_device, setup_directories,
-    resolve_classes_and_split, LandmarkDataset, train_one_epoch, 
+    resolve_classes_and_split, resolve_collected_split, LandmarkDataset, 
+    CollectedLandmarkDataset, train_one_epoch, 
     evaluate_epoch, EarlyStopping, MIRROR_AUGMENT
 )
 from model_defs import LandmarkMLP, count_parameters
@@ -21,6 +22,7 @@ LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4 # AdamW
 LABEL_SMOOTHING = 0.05 # Softens overconfident predictions on a small, clean dataset
 PATIENCE = 15
+COLLECTED_WEIGHT = 3
 
 def get_args():
     parser = get_base_parser()
@@ -32,7 +34,7 @@ def main():
     args = get_args()
     
     if args.include_collected:
-        print("ERROR: --include-collected is not implemented until Section 10. Ignoring flag for now.")
+        print("Collect mode enabled: Will include collected samples in training.")
         
     set_seed()
     device = get_device()
@@ -53,6 +55,22 @@ def main():
     # num_workers=0 because the landmarks are already fully loaded into RAM in the Dataset
     train_dataset = LandmarkDataset(npz_path, train_paths, class_names, is_train=True)
     val_dataset = LandmarkDataset(npz_path, val_paths, class_names, is_train=False)
+    
+    collected_test_dataset = None
+    collected_samples_count = 0
+    if args.include_collected:
+        collected_npz = os.path.join(args.data_dir, "landmarks", "collected_landmarks.npz")
+        if os.path.exists(collected_npz):
+            c_train_idx, c_test_idx = resolve_collected_split(collected_npz, args.outputs_dir)
+            collected_train_dataset = CollectedLandmarkDataset(collected_npz, c_train_idx, class_names, is_train=True)
+            collected_test_dataset = CollectedLandmarkDataset(collected_npz, c_test_idx, class_names, is_train=False)
+            collected_samples_count = len(c_train_idx)
+            
+            from torch.utils.data import ConcatDataset
+            train_dataset = ConcatDataset([train_dataset] + [collected_train_dataset] * COLLECTED_WEIGHT)
+            print(f"Added {collected_samples_count} collected samples to training (oversampled {COLLECTED_WEIGHT}x)")
+        else:
+            print(f"WARNING: {collected_npz} not found. Proceeding without collected data.")
     
     b_size = 2 if args.smoke_test else BATCH_SIZE
     
@@ -137,6 +155,11 @@ def main():
         
     history_file.close()
     
+    if collected_test_dataset is not None and len(collected_test_dataset) > 0:
+        c_loader = DataLoader(collected_test_dataset, batch_size=b_size, shuffle=False)
+        c_loss, c_acc = evaluate_epoch(model, c_loader, criterion, device, is_image=False)
+        print(f"\nFinal Collected Test Set (unseen signers) - Loss: {c_loss:.4f} Acc: {c_acc:.4f}")
+    
     if early_stopping.best_state is not None:
         best_acc = early_stopping.best_loss # Actually we didn't track best_acc directly in ES, but it restored best val_loss.
         # It's cleaner to save the best model out now
@@ -152,7 +175,9 @@ def main():
                 "pipeline_version": "landmark-v1"
             },
             "mirror_augment": MIRROR_AUGMENT,
-            "best_val_loss": early_stopping.best_loss
+            "best_val_loss": early_stopping.best_loss,
+            "trained_with_collected": args.include_collected,
+            "collected_samples_count": collected_samples_count
         }
         torch.save(save_dict, best_pt_path)
         print(f"\nSaved BEST model to {best_pt_path} (Val Loss: {early_stopping.best_loss:.4f})")

@@ -3,6 +3,7 @@ import Webcam from './components/Webcam';
 import PredictionOverlay from './components/PredictionOverlay';
 import WordBuilder from './components/WordBuilder';
 import PracticeMode from './components/PracticeMode';
+import DataCollector from './components/DataCollector';
 import { useSignPrediction } from './hooks/useSignPrediction';
 import { runParityCheck } from './utils/parityCheck';
 import { getActiveDelegate } from './utils/handDetection';
@@ -12,7 +13,8 @@ function App() {
     const overlayRef = useRef(null);
 
     const [classFilter, setClassFilter] = useState('letters'); 
-    const [appMode, setAppMode] = useState('free'); // 'free' | 'practice'
+    const isCollectModeAvailable = new URLSearchParams(window.location.search).get('collect') === '1';
+    const [appMode, setAppMode] = useState(isCollectModeAvailable ? 'collect' : 'free'); // 'free' | 'practice' | 'collect'
     
     // Core ML hook
     const { 
@@ -57,6 +59,18 @@ function App() {
                     >
                         Practice mode
                     </button>
+                    {isCollectModeAvailable && (
+                        <button
+                            onClick={() => setAppMode('collect')}
+                            className={`px-5 py-2 rounded-full text-sm font-medium transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blush-600 ${
+                                appMode === 'collect' 
+                                    ? 'bg-blush-700 text-white shadow-sm' 
+                                    : 'text-ink-muted hover:text-ink'
+                            }`}
+                        >
+                            Collect mode
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -99,20 +113,24 @@ function App() {
                     />
 
                     {/* Mode Specific UI */}
-                    {appMode === 'free' ? (
+                    {appMode === 'free' && (
                         <WordBuilder 
                             status={status}
                             label={label}
                             classFilter={classFilter}
                             setClassFilter={setClassFilter}
                         />
-                    ) : (
+                    )}
+                    {appMode === 'practice' && (
                         <PracticeMode 
                             status={status}
                             label={label}
                             classFilter={classFilter}
                             setClassFilter={setClassFilter}
                         />
+                    )}
+                    {appMode === 'collect' && isCollectModeAvailable && (
+                        <DataCollector videoRef={videoRef} lastInput={lastInput} cropBox={cropBox} />
                     )}
                 </div>
             </div>

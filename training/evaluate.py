@@ -27,35 +27,66 @@ def parse_args():
 def evaluate_model(args, model_type):
     print(f"\n--- Evaluating {model_type} model on {args.test_set} set ---")
     if args.test_set == "collected":
-        print("Friendly message: collected test set available after Section 10. Exiting.")
-        return
+        print("Evaluating on collected holdout set.")
         
     outputs_dir = args.outputs_dir
     with open(os.path.join(outputs_dir, "class_names.json"), "r") as f:
         class_names = json.load(f)
         
-    with open(os.path.join(outputs_dir, "split.json"), "r") as f:
+    split_filename = "split.json" if args.test_set != "collected" else "collected_split.json"
+    with open(os.path.join(outputs_dir, split_filename), "r") as f:
         split_data = json.load(f)
-    test_paths = set(split_data[args.test_set])
+    test_key = args.test_set if args.test_set != "collected" else "test_indices"
+    test_paths = set(split_data[test_key])
     
     device = get_device()
     is_landmark = (model_type == "landmark")
     
     if is_landmark:
-        npz_path = os.path.join(args.data_dir, "landmarks", "isl_landmarks.npz")
-        dataset = LandmarkDataset(npz_path, test_paths, class_names, is_train=False)
+        if args.test_set == "collected":
+            npz_path = os.path.join(args.data_dir, "landmarks", "collected_landmarks.npz")
+            from common import CollectedLandmarkDataset
+            dataset = CollectedLandmarkDataset(npz_path, list(test_paths), class_names, is_train=False)
+        else:
+            npz_path = os.path.join(args.data_dir, "landmarks", "isl_landmarks.npz")
+            dataset = LandmarkDataset(npz_path, test_paths, class_names, is_train=False)
         model = LandmarkMLP(len(class_names))
         ckpt_path = os.path.join(args.models_dir, "landmark_mlp.pt")
         prefix = "landmark_mlp"
     else:
-        crop_dir = os.path.join(args.data_dir, "isl_cropped")
-        dataset = CropImageDataset(crop_dir, test_paths, class_names, is_train=False)
+        if args.test_set == "collected":
+            npz_path = os.path.join(args.data_dir, "landmarks", "collected_landmarks.npz")
+            data = np.load(npz_path)
+            sessions = data["session_id"]
+            test_sessions = set([sessions[i] for i in test_paths])
+            
+            allowed_paths = set()
+            crop_dir = os.path.join(args.data_dir, "collected_crops")
+            if os.path.exists(crop_dir):
+                import glob
+                for label in class_names:
+                    if label == "other": continue
+                    pattern = os.path.join(crop_dir, label, "*.jpg")
+                    for p in glob.glob(pattern):
+                        basename = os.path.basename(p)
+                        for s in test_sessions:
+                            if basename.startswith(s + "_"):
+                                allowed_paths.add(f"{label}/{basename}")
+                                break
+            dataset = CropImageDataset(crop_dir, allowed_paths, class_names, is_train=False)
+        else:
+            crop_dir = os.path.join(args.data_dir, "isl_cropped")
+            dataset = CropImageDataset(crop_dir, test_paths, class_names, is_train=False)
         model = MudraMobileNetV2(len(class_names))
         ckpt_path = os.path.join(args.models_dir, "image_cnn.pt")
         prefix = "image_cnn"
         
     if not os.path.exists(ckpt_path):
         print(f"Checkpoint not found at {ckpt_path}. Skipping.")
+        return
+        
+    if len(dataset) == 0:
+        print(f"Dataset for {model_type} is empty on {args.test_set} set. Skipping.")
         return
         
     checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -99,15 +130,15 @@ def evaluate_model(args, model_type):
     p_macro, r_macro, f1_macro, _ = precision_recall_fscore_support(all_labels, all_preds, average='macro', zero_division=0)
     print(f"Overall Accuracy: {acc:.4f}")
     
-    # Classification Report
-    cr = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True, zero_division=0)
+    # Classification    # Generate metrics
+    cr = classification_report(all_labels, all_preds, labels=np.arange(len(class_names)), target_names=class_names, output_dict=True, zero_division=0)
     cr_df = pd.DataFrame(cr).transpose()
     cr_csv_path = os.path.join(outputs_dir, f"{prefix}_{args.test_set}_classification_report.csv")
     cr_df.to_csv(cr_csv_path)
     
     # Confusion Matrix
-    cm = confusion_matrix(all_labels, all_preds)
-    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm = confusion_matrix(all_labels, all_preds, labels=np.arange(len(class_names)))
+    cm_norm = cm.astype('float') / (cm.sum(axis=1)[:, np.newaxis] + 1e-9)
     cm_norm = np.nan_to_num(cm_norm)
     
     plt.figure(figsize=(16, 12))
@@ -200,7 +231,7 @@ def evaluate_model(args, model_type):
         acc_mirror = accuracy_score(all_labels, mirror_preds)
         print(f"Mirrored Accuracy: {acc_mirror:.4f}")
         
-        cm_m = confusion_matrix(all_labels, mirror_preds)
+        cm_m = confusion_matrix(all_labels, mirror_preds, labels=np.arange(len(class_names)))
         sharp_rises = []
         for i in range(len(class_names)):
             for j in range(len(class_names)):
@@ -308,10 +339,17 @@ def compare_models(args):
         
         print("\n=== MODEL COMPARISON ===")
         print(df.to_string())
-        print(f"\nThe landmark MLP is {size_ratio:.1f}x smaller and {lat_ratio:.1f}x faster than MobileNetV2, "
-              f"with an accuracy difference of {acc_diff:+.1f} percentage points on the block-split validation set.")
-        print("Note: The most meaningful comparison is on UNSEEN-SIGNER data (Section 10), "
-              "where landmark models usually hold up better because they ignore background and skin tone.")
+        
+        # Read the test set string
+        is_collected = (args.test_set == "collected")
+        
+        print(f"\nThe landmark MLP is {size_ratio:.1f}x smaller and {lat_ratio:.1f}x faster than MobileNetV2.")
+        if is_collected:
+            print(f"On an unseen signer, the landmark MLP scores {lm['accuracy']*100:.1f}% vs MobileNetV2's {im['accuracy']*100:.1f}%.")
+        else:
+            print(f"Accuracy difference of {acc_diff:+.1f} percentage points on the block-split validation set.")
+            print("Note: The most meaningful comparison is on UNSEEN-SIGNER data (Section 10), "
+                  "where landmark models usually hold up better because they ignore background and skin tone.")
     else:
         print("\nCannot compare: both metrics files must exist.")
 
