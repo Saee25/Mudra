@@ -1,10 +1,332 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Verify ONNX Model</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mudra — Model Check</title>
+    <style>
+        /* Mudra Design System: inline CSS for no-build testing */
+        body {
+            background-color: #FBF7F0; /* cream-100 */
+            color: #2E2226; /* ink */
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            font-family: Georgia, serif; /* fallback for Fraunces */
+            color: #B81848; /* blush-700 */
+            font-weight: 600;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #FFFDF8; /* cream-50 */
+            border: 1px solid #EDE0CC; /* cream-300 */
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 12px rgba(46, 34, 38, 0.05); /* very soft ink shadow */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem;
+            font-size: 0.95rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid #EDE0CC;
+        }
+        th {
+            color: #6B5A5E; /* ink-muted */
+            font-weight: 500;
+        }
+        .status-pass {
+            color: #5B7F5E; /* sage */
+            font-weight: 600;
+        }
+        .status-fail {
+            color: #DA2456; /* blush-600 */
+            font-weight: 600;
+        }
+        .note {
+            background: #FFF1F3; /* blush-50 */
+            border-left: 4px solid #FAA7B6; /* blush-300 */
+            padding: 1rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+            margin-bottom: 2rem;
+            color: #84173F; /* blush-900 */
+            font-size: 0.9rem;
+        }
+        #overall-status {
+            text-align: center;
+            font-size: 1.5rem;
+            margin: 1rem 0;
+            font-family: Georgia, serif;
+        }
+    </style>
+    <!-- Use a pinned CDN version just for this test file -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js"></script>
 </head>
 <body>
-  <!-- Placeholder for ONNX Model Verification -->
+    <div class="container">
+        <h1>Mudra — Model Check</h1>
+        
+        <div class="note">
+            <strong>Note:</strong> Browsers block <code>fetch()</code> requests from <code>file://</code> URLs. 
+            To run this page, you must serve it using a local web server from the <code>mudra/</code> root directory:
+            <br><code>python -m http.server 8000</code><br>
+            Then open <a href="http://localhost:8000/training/verify_onnx_model.html">http://localhost:8000/training/verify_onnx_model.html</a>.
+        </div>
+        
+        <div id="overall-status">Running checks...</div>
+
+        <h2>Unit Cases (Preprocessing)</h2>
+        <table id="unit-table">
+            <thead>
+                <tr>
+                    <th>Case</th>
+                    <th>Max JS/Py Diff</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <h2>Parity Samples (End-to-End)</h2>
+        <table id="parity-table">
+            <thead>
+                <tr>
+                    <th>Sample</th>
+                    <th>True Label</th>
+                    <th>Predicted</th>
+                    <th>Max Prob Diff</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        // Exact mirror of Python build_landmark_input
+        function buildLandmarkInput(handLandmarksList, frameWidth, frameHeight) {
+            // 1. Initialize outputs with zeros
+            // landmarksOut: [2, 21, 3] flat Float32Array (126 elements)
+            // handMask: [2] flat Float32Array
+            const landmarksOut = new Float32Array(2 * 21 * 3);
+            const handMask = new Float32Array(2);
+
+            if (!handLandmarksList || handLandmarksList.length === 0) {
+                return { landmarks: landmarksOut, mask: handMask };
+            }
+
+            const handsPx = [];
+            for (const handLms of handLandmarksList) {
+                const handPx = [];
+                for (let i = 0; i < handLms.length; i++) {
+                    const lm = handLms[i];
+                    handPx.push([
+                        lm.x * frameWidth,
+                        lm.y * frameHeight,
+                        lm.z * frameWidth
+                    ]);
+                }
+                handsPx.push(handPx);
+            }
+
+            // 2. Sort hands by wrist (landmark 0) x_px, then y_px
+            handsPx.sort((a, b) => {
+                if (a[0][0] !== b[0][0]) return a[0][0] - b[0][0];
+                return a[0][1] - b[0][1];
+            });
+
+            // 3. Fill arrays (at most 2 hands)
+            const numHands = Math.min(handsPx.length, 2);
+            for (let i = 0; i < numHands; i++) {
+                const handPx = handsPx[i];
+                for (let j = 0; j < 21; j++) {
+                    landmarksOut[i * 21 * 3 + j * 3 + 0] = handPx[j][0];
+                    landmarksOut[i * 21 * 3 + j * 3 + 1] = handPx[j][1];
+                    landmarksOut[i * 21 * 3 + j * 3 + 2] = handPx[j][2];
+                }
+                handMask[i] = 1.0;
+            }
+
+            return { landmarks: landmarksOut, mask: handMask };
+        }
+
+        // Helper to flatten deeply nested array
+        function flattenArray(arr) {
+            return arr.reduce((acc, val) => 
+                Array.isArray(val) ? acc.concat(flattenArray(val)) : acc.concat(val), []
+            );
+        }
+
+        async function runTests() {
+            let overallPass = true;
+            let failures = 0;
+
+            try {
+                // Configure ONNX Runtime to use WASM
+                ort.env.wasm.numThreads = 1;
+
+                console.log("Loading files...");
+                const [unitRes, parityRes] = await Promise.all([
+                    fetch('../training/outputs/parity_unit_cases.json').then(r => r.json()),
+                    fetch('../model/parity_samples.json').then(r => r.json())
+                ]);
+
+                // Create ONNX session
+                console.log("Creating ONNX session...");
+                const session = await ort.InferenceSession.create('../model/mudra.onnx', { executionProviders: ['wasm'] });
+
+                // --- 1. Unit Cases ---
+                const unitTable = document.querySelector('#unit-table tbody');
+                
+                // Reconstruct inputs for unit cases matching Python's self-test
+                const h1 = Array.from({length: 21}, (_, i) => ({x: 0.1 + i*0.001, y: 0.2, z: 0.3}));
+                const h2 = Array.from({length: 21}, (_, i) => ({x: 0.05 + i*0.001, y: 0.2, z: 0.3}));
+                
+                const unitTests = [
+                    { name: 'one_hand', input: [h1], expected: unitRes.one_hand },
+                    { name: 'two_hands_order', input: [h1, h2], expected: unitRes.two_hands_order }
+                ];
+
+                for (const test of unitTests) {
+                    if (!test.expected) {
+                        console.warn(`Unit test ${test.name} not found in parity_unit_cases.json`);
+                        continue;
+                    }
+                    const jsOut = buildLandmarkInput(test.input, 1000, 1000);
+                    
+                    const expectedLms = flattenArray(test.expected.landmarks);
+                    const expectedMask = test.expected.mask;
+                    
+                    let maxDiff = 0;
+                    for (let i = 0; i < jsOut.landmarks.length; i++) {
+                        maxDiff = Math.max(maxDiff, Math.abs(jsOut.landmarks[i] - expectedLms[i]));
+                    }
+                    for (let i = 0; i < jsOut.mask.length; i++) {
+                        maxDiff = Math.max(maxDiff, Math.abs(jsOut.mask[i] - expectedMask[i]));
+                    }
+                    
+                    const passed = maxDiff < 1e-4;
+                    if (!passed) overallPass = false;
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${test.name}</td>
+                        <td>${maxDiff.toExponential(2)}</td>
+                        <td class="${passed ? 'status-pass' : 'status-fail'}">${passed ? 'PASS' : 'FAIL'}</td>
+                    `;
+                    unitTable.appendChild(tr);
+                }
+
+                // --- 2. Parity Samples (End-to-End) ---
+                const parityTable = document.querySelector('#parity-table tbody');
+                
+                for (let i = 0; i < parityRes.length; i++) {
+                    const sample = parityRes[i];
+                    
+                    // Convert nested array of raw landmarks back to objects
+                    const lmsList = sample.raw_landmarks.map(hand => 
+                        hand.map(pt => ({ x: pt[0], y: pt[1], z: pt[2] }))
+                    );
+                    
+                    // Run JS pre-processing
+                    const jsOut = buildLandmarkInput(lmsList, sample.frame_w, sample.frame_h);
+                    
+                    // Verify JS pre-processing against Python expected output
+                    const pyExpectedLmsFlat = flattenArray(sample.expected_landmarks);
+                    let preprocDiff = 0;
+                    for (let j = 0; j < jsOut.landmarks.length; j++) {
+                        preprocDiff = Math.max(preprocDiff, Math.abs(jsOut.landmarks[j] - pyExpectedLmsFlat[j]));
+                    }
+                    if (preprocDiff > 1e-4) {
+                        console.error(`Preproc diff too high for sample ${i}: ${preprocDiff}`);
+                    }
+                    
+                    // Create ONNX tensors (must match exact shapes: [1, 2, 21, 3] and [1, 2])
+                    // We can use the JS-computed arrays directly
+                    const tensorLms = new ort.Tensor('float32', jsOut.landmarks, [1, 2, 21, 3]);
+                    const tensorMask = new ort.Tensor('float32', jsOut.mask, [1, 2]);
+                    
+                    // Run ONNX Runtime Web
+                    const feeds = { landmarks: tensorLms, hand_mask: tensorMask };
+                    const results = await session.run(feeds);
+                    const ortProbs = results.probabilities.data;
+                    
+                    const pyProbs = sample.expected_probabilities;
+                    
+                    // Compare max absolute probability difference
+                    let maxProbDiff = 0;
+                    let ortPred = 0;
+                    let maxOrtProb = -1;
+                    
+                    for (let j = 0; j < pyProbs.length; j++) {
+                        maxProbDiff = Math.max(maxProbDiff, Math.abs(ortProbs[j] - pyProbs[j]));
+                        if (ortProbs[j] > maxOrtProb) {
+                            maxOrtProb = ortProbs[j];
+                            ortPred = j;
+                        }
+                    }
+                    
+                    let pyPred = 0;
+                    let maxPyProb = -1;
+                    for (let j = 0; j < pyProbs.length; j++) {
+                        if (pyProbs[j] > maxPyProb) {
+                            maxPyProb = pyProbs[j];
+                            pyPred = j;
+                        }
+                    }
+                    
+                    const top1Agrees = ortPred === pyPred;
+                    const passed = top1Agrees && maxProbDiff < 1e-4;
+                    if (!passed) {
+                        overallPass = false;
+                        failures++;
+                        console.error(`Sample ${i} failed. True Label: ${sample.true_label}, PyPred: ${pyPred}, ORTPred: ${ortPred}, MaxDiff: ${maxProbDiff}`);
+                    }
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>Sample ${i}</td>
+                        <td>${sample.true_label}</td>
+                        <td>Class ${ortPred}</td>
+                        <td>${maxProbDiff.toExponential(2)}</td>
+                        <td class="${passed ? 'status-pass' : 'status-fail'}">${passed ? 'PASS' : 'FAIL'}</td>
+                    `;
+                    parityTable.appendChild(tr);
+                }
+
+                // Final Status
+                const statusEl = document.getElementById('overall-status');
+                if (overallPass) {
+                    statusEl.textContent = 'All Checks Passed!';
+                    statusEl.className = 'status-pass';
+                    console.log('%cSUCCESS: ONNX Runtime Web perfectly matches PyTorch model.', 'color: green; font-size: 16px');
+                } else {
+                    statusEl.textContent = `${failures} Checks Failed`;
+                    statusEl.className = 'status-fail';
+                    console.error('ERROR: Disagreements found between JS/ONNX and Python/PyTorch.');
+                }
+
+            } catch (err) {
+                console.error("Error running tests:", err);
+                document.getElementById('overall-status').textContent = 'Error: Check Console';
+                document.getElementById('overall-status').className = 'status-fail';
+            }
+        }
+
+        runTests();
+    </script>
 </body>
 </html>
