@@ -39,8 +39,11 @@ training/data/
 training/models/
 training/outputs/
 training/assets/
-model/
-
+# model/ # Uncomment if you want to ignore the exported model, but it's small (<1MB) so it's good to track it!
 # OS specific
 .DS_Store
 Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
