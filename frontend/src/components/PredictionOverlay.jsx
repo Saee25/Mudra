@@ -24,6 +24,11 @@ export default function PredictionOverlay({
                         />
                     </div>
                 </div>
+            ) : status === 'error' ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
+                    <p className="text-blush-800 font-semibold text-xl">Model Failed to Load</p>
+                    <p className="text-ink-muted text-sm">Please check the console for details.</p>
+                </div>
             ) : status === 'no-hand' ? (
                 <div className="flex-1 flex items-center justify-center">
                     <p className="text-ink-muted text-xl text-center">Show your hands to the camera</p>

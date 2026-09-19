@@ -87,6 +87,12 @@ def main():
     onnx_model = onnx.load(onnx_path)
     onnx.checker.check_model(onnx_model)
     
+    # Force save as a single file (no external data)
+    onnx.save(onnx_model, onnx_path)
+    data_file = onnx_path + ".data"
+    if os.path.exists(data_file):
+        os.remove(data_file)
+    
     # File size and quantization explanation
     size_kb = os.path.getsize(onnx_path) / 1024
     print(f"ONNX export successful. Model checked. Size: {size_kb:.2f} KB.")

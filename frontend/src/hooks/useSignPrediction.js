@@ -54,6 +54,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
                 }
             } catch (error) {
                 console.error("Failed to initialize ML models:", error);
+                if (isMounted) setStatus('error');
             }
         }
         init();
@@ -64,7 +65,6 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
     useEffect(() => {
         if (!enabled || !modelLoaded || !videoRef.current || !overlayRef.current) return;
         const video = videoRef.current;
-        if (video.readyState < 2) return;
 
         const canvas = overlayRef.current;
         const ctx = canvas.getContext('2d');
@@ -84,6 +84,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
         // 2. Classification involves CPU compute. Even if it's fast (1-3ms), running it 60 times a second 
         //    wastes battery and compute power. 15 predictions per second is plenty for sign language.
         const predInterval = setInterval(async () => {
+            if (video.readyState < 2) return;
             if (isPredictingRef.current || !latestInputRef.current) return;
             isPredictingRef.current = true;
 
@@ -170,6 +171,11 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
 
         // The Detection Loop (Animation Frame)
         const loop = () => {
+            if (video.readyState < 2) {
+                rafIdRef.current = requestAnimationFrame(loop);
+                return;
+            }
+
             const now = performance.now();
             
             frameCount++;

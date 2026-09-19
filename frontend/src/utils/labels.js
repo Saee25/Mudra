@@ -14,16 +14,16 @@ export async function loadLabels() {
         modelMeta = await metaRes.json();
 
         // Check meta
-        if (modelMeta.num_classes !== labels.length) {
-            console.warn(`Mismatch: model_meta num_classes (${modelMeta.num_classes}) != labels length (${labels.length})`);
+        if (modelMeta.class_count !== labels.length) {
+            console.warn(`Mismatch: model_meta class_count (${modelMeta.class_count}) != labels length (${labels.length})`);
         }
         if (modelMeta.pipeline_version !== "landmark-v1") {
             console.warn(`Mismatch: pipeline_version is ${modelMeta.pipeline_version}, expected "landmark-v1"`);
         }
-        if (modelMeta.crop_padding !== 0.2 || modelMeta.crop_size !== 224) { // CROP_PADDING/CROP_SIZE from handCrop.js
+        if (modelMeta.crop_parameters.padding !== 0.2 || modelMeta.crop_parameters.max_size !== 224) { // CROP_PADDING/CROP_SIZE from handCrop.js
             console.warn(`Mismatch: crop_padding/crop_size mismatch with handCrop.js constants`);
         }
-        if (modelMeta.min_detection_confidence !== 0.3 || modelMeta.min_presence_confidence !== 0.3 || modelMeta.num_hands !== 2) {
+        if (modelMeta.hand_detection.min_detection_confidence !== 0.3 || modelMeta.hand_detection.min_presence_confidence !== 0.3 || modelMeta.hand_detection.num_hands !== 2) {
             console.warn(`Mismatch: MediaPipe confidences or num_hands mismatch with handDetection.js`);
         }
         

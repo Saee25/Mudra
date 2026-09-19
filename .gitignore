@@ -45,6 +45,7 @@ training/assets/
 # OS specific
 .DS_Store
 Thumbs.db
+*.log
 
 # IDEs
 .vscode/

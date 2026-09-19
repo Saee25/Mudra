@@ -37,37 +37,16 @@ const handMaskBuffer = new Float32Array(1 * 2);
 export async function loadModel(onProgress) {
     if (session) return session;
 
-    console.log("Fetching model bytes for progress tracking...");
-    const response = await fetch(import.meta.env.BASE_URL + "model/mudra.onnx");
-    const contentLength = response.headers.get('content-length');
-    const total = parseInt(contentLength, 10) || 0;
-    
-    let loaded = 0;
-    const reader = response.body.getReader();
-    const chunks = [];
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        if (onProgress && total > 0) {
-            onProgress(Math.round((loaded / total) * 100));
-        }
-    }
-
-    const arrayBuffer = new Uint8Array(loaded);
-    let position = 0;
-    for (const chunk of chunks) {
-        arrayBuffer.set(chunk, position);
-        position += chunk.length;
-    }
-
     console.log("Creating ORT session...");
-    // For a model this small, GPU dispatch overhead exceeds the compute time.
-    // WASM is faster and has wider compatibility.
-    session = await ort.InferenceSession.create(arrayBuffer.buffer, { executionProviders: ['wasm'] });
-    console.log(`Active Execution Provider: ${session.executionProviders[0]}`);
+    const modelUrl = import.meta.env.BASE_URL + "model/mudra.onnx";
+    
+    // Pass the URL directly so ORT can resolve mudra.onnx.data relative to it
+    session = await ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] });
+    console.log(`Session created.`);
+
+    if (onProgress) {
+        onProgress(100);
+    }
 
     // Warm-up run: The first run of a WASM model is usually slower due to WebAssembly 
     // JIT compilation and initialization. We run it once with zeros to get it out of the way.
