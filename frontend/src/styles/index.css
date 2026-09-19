@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* 
+  Design System Color Usage Rules:
+  - Primary buttons: bg-blush-700 with text-white (hover: bg-blush-800)
+  - Secondary buttons: bg-cream-50 or transparent with text-blush-700 and border-cream-300/blush-200
+  - Text contrast: Use white text ONLY on blush-600 or darker (blush-300/400/500 fails WCAG AA)
+  - Cards/Panels: bg-cream-50 with 1px border-cream-300
+  - Page Background: bg-cream-100
+*/
+
+@theme {
+  /* Blush (primary accent; reddish-pink) */
+  --color-blush-50:  #FFF1F3;
+  --color-blush-100: #FEE5E8;
+  --color-blush-200: #FCCFD7;
+  --color-blush-300: #FAA7B6;
+  --color-blush-400: #F77F97;
+  --color-blush-500: #EE456B;
+  --color-blush-600: #DA2456;
+  --color-blush-700: #B81848;
+  --color-blush-800: #9A1742;
+  --color-blush-900: #84173F;
+
+  /* Cream (backgrounds and surfaces) */
+  --color-cream-50:  #FFFDF8;
+  --color-cream-100: #FBF7F0;
+  --color-cream-200: #F6EEE2;
+  --color-cream-300: #EDE0CC;
+  --color-cream-400: #DCC9AE;
+
+  /* Ink (text; warm near-black) */
+  --color-ink:       #2E2226;
+  --color-ink-muted: #6B5A5E;
+
+  /* Status */
+  --color-sage:      #5B7F5E;
+
+  /* Fonts */
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-sans: "DM Sans Variable", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-cream-100 text-ink font-sans antialiased leading-relaxed;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-blush-600;
+  }
+}

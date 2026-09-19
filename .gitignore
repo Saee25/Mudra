@@ -1,0 +1,46 @@
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+.npm/
+
+# Python / Training
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Project Data & Artifacts (Large Files)
+training/data/
+training/models/
+training/outputs/
+training/assets/
+model/
+
+# OS specific
+.DS_Store
+Thumbs.db
