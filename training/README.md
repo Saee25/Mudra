@@ -29,7 +29,6 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
 
-*(Note: If you have an NVIDIA GPU and wish to train locally with CUDA, simply install PyTorch without the `--index-url` flag using the default index, according to the official PyTorch instructions.)*
 
 ## Verifying the Installation
 
