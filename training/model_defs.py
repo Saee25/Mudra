@@ -98,6 +98,44 @@ class LandmarkMLP(nn.Module):
         return self.mlp(x)
 
 
+class LandmarkLSTM(nn.Module):
+    def __init__(self, num_classes, hidden_size=128, num_layers=2):
+        super().__init__()
+        self.norm = LandmarkNormalization()
+        self.lstm = nn.LSTM(
+            input_size=254, 
+            hidden_size=hidden_size, 
+            num_layers=num_layers, 
+            batch_first=True,
+            dropout=0.3 if num_layers > 1 else 0.0
+        )
+        self.fc = nn.Linear(hidden_size, num_classes)
+        
+    def forward(self, landmarks_seq, hand_mask_seq):
+        # landmarks_seq: [B, T, 2, 21, 3]
+        # hand_mask_seq: [B, T, 2]
+        B, T = landmarks_seq.shape[:2]
+        
+        # Flatten time into batch for normalization
+        lms_flat = landmarks_seq.view(B * T, 2, 21, 3)
+        mask_flat = hand_mask_seq.view(B * T, 2)
+        
+        # Normalize each frame
+        features = self.norm(lms_flat, mask_flat) # [B * T, 254]
+        
+        # Reshape back to sequence
+        features_seq = features.view(B, T, -1) # [B, T, 254]
+        
+        # LSTM
+        lstm_out, _ = self.lstm(features_seq)
+        
+        # Take the output of the last time step
+        last_out = lstm_out[:, -1, :] # [B, hidden_size]
+        
+        return self.fc(last_out)
+
+
+
 class InputNormalization(nn.Module):
     """
     Image normalization for MobileNetV2.
@@ -155,6 +193,16 @@ class LandmarkExportWrapper(nn.Module):
         
     def forward(self, landmarks, hand_mask):
         logits = self.model(landmarks, hand_mask)
+        return self.softmax(logits)
+
+class LandmarkSequenceExportWrapper(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.softmax = nn.Softmax(dim=1)
+        
+    def forward(self, landmarks_seq, hand_mask_seq):
+        logits = self.model(landmarks_seq, hand_mask_seq)
         return self.softmax(logits)
 
 class ImageExportWrapper(nn.Module):

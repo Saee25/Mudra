@@ -1,17 +1,24 @@
 let labels = [];
+let phrasesLabels = [];
 let modelMeta = null;
 
 export async function loadLabels() {
     if (labels.length > 0) return labels;
 
     try {
-        const [labelsRes, metaRes] = await Promise.all([
+        const [labelsRes, metaRes, phrasesMetaRes] = await Promise.all([
             fetch(import.meta.env.BASE_URL + 'model/class_names.json'),
-            fetch(import.meta.env.BASE_URL + 'model/model_meta.json')
+            fetch(import.meta.env.BASE_URL + 'model/model_meta.json'),
+            fetch(import.meta.env.BASE_URL + 'model/mudra_phrases_meta.json').catch(() => null)
         ]);
         
         labels = await labelsRes.json();
         modelMeta = await metaRes.json();
+        
+        if (phrasesMetaRes && phrasesMetaRes.ok) {
+            const phrasesMeta = await phrasesMetaRes.json();
+            phrasesLabels = phrasesMeta.class_names || [];
+        }
 
         // Check meta
         if (modelMeta.class_count !== labels.length) {
@@ -39,6 +46,10 @@ export function getLabels() {
     return labels;
 }
 
+export function getPhrasesLabels() {
+    return phrasesLabels;
+}
+
 export function isDigit(label) {
     return /^[0-9]+$/.test(label);
 }
@@ -53,6 +64,10 @@ export function isSpecialClass(label) {
 
 export function getClassIndices(filter) {
     const indices = [];
+    if (filter === "phrases") {
+        phrasesLabels.forEach((_, index) => indices.push(index));
+        return indices;
+    }
     labels.forEach((label, index) => {
         if (filter === "both") {
             indices.push(index);

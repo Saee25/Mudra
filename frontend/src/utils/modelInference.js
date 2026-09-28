@@ -6,6 +6,7 @@ ort.env.wasm.wasmPaths = import.meta.env.BASE_URL + "ort/";
 ort.env.wasm.numThreads = 1;
 
 let session = null;
+let sessionPhrases = null;
 
 // Reusable buffers
 const landmarksBuffer = new Float32Array(1 * 2 * 21 * 3);
@@ -35,14 +36,21 @@ const handMaskBuffer = new Float32Array(1 * 2);
  */
 
 export async function loadModel(onProgress) {
-    if (session) return session;
+    if (session && sessionPhrases) return { session, sessionPhrases };
 
-    console.log("Creating ORT session...");
+    console.log("Creating ORT sessions...");
     const modelUrl = import.meta.env.BASE_URL + "model/mudra.onnx";
+    const phrasesModelUrl = import.meta.env.BASE_URL + "model/mudra_phrases.onnx";
     
     // Pass the URL directly so ORT can resolve mudra.onnx.data relative to it
     session = await ort.InferenceSession.create(modelUrl, { executionProviders: ['wasm'] });
-    console.log(`Session created.`);
+    
+    try {
+        sessionPhrases = await ort.InferenceSession.create(phrasesModelUrl, { executionProviders: ['wasm'] });
+    } catch (e) {
+        console.warn("Could not load phrases model:", e);
+    }
+    console.log(`Sessions created.`);
 
     if (onProgress) {
         onProgress(100);
@@ -55,9 +63,16 @@ export async function loadModel(onProgress) {
     const warmupLandmarksTensor = new ort.Tensor('float32', landmarksBuffer, [1, 2, 21, 3]);
     const warmupMaskTensor = new ort.Tensor('float32', handMaskBuffer, [1, 2]);
     await session.run({ landmarks: warmupLandmarksTensor, hand_mask: warmupMaskTensor });
+    
+    if (sessionPhrases) {
+        const warmupSeqLms = new ort.Tensor('float32', new Float32Array(1 * 30 * 2 * 21 * 3), [1, 30, 2, 21, 3]);
+        const warmupSeqMask = new ort.Tensor('float32', new Float32Array(1 * 30 * 2), [1, 30, 2]);
+        await sessionPhrases.run({ landmarks: warmupSeqLms, hand_mask: warmupSeqMask });
+    }
+    
     console.log("Model warm-up complete.");
 
-    return session;
+    return { session, sessionPhrases };
 }
 
 export async function predict(inputData) {
@@ -76,5 +91,19 @@ export async function predict(inputData) {
     const results = await session.run({ landmarks: landmarksTensor, hand_mask: maskTensor });
     const inferenceMs = performance.now() - start;
 
+    return { probabilities: results.probabilities.data, inferenceMs };
+}
+
+export async function predictSequence(seqData) {
+    if (!sessionPhrases) throw new Error("Phrases model not loaded");
+    
+    // seqData should be { landmarks: [30 x 2 x 21 x 3] flat array, handMask: [30 x 2] flat array }
+    const landmarksTensor = new ort.Tensor('float32', seqData.landmarks, [1, 30, 2, 21, 3]);
+    const maskTensor = new ort.Tensor('float32', seqData.handMask, [1, 30, 2]);
+    
+    const start = performance.now();
+    const results = await sessionPhrases.run({ landmarks: landmarksTensor, hand_mask: maskTensor });
+    const inferenceMs = performance.now() - start;
+    
     return { probabilities: results.probabilities.data, inferenceMs };
 }

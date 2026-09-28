@@ -91,7 +91,7 @@ export default function WordBuilder({ status, label, classFilter, setClassFilter
                 
                 {/* Filter Toggle */}
                 <div className="flex bg-cream-200 rounded-full p-1 shadow-inner">
-                    {['letters', 'numbers', 'both'].map((f) => (
+                    {['letters', 'numbers', 'both', 'phrases'].map((f) => (
                         <button
                             key={f}
                             onClick={() => setClassFilter(f)}

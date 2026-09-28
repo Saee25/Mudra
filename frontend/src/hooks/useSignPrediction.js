@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { initHandDetector, detectHands } from '../utils/handDetection';
 import { buildLandmarkInput } from '../utils/landmarkInput';
 import { computeCropBox } from '../utils/handCrop';
-import { loadModel, predict } from '../utils/modelInference';
-import { loadLabels, getLabels, getClassIndices, isSpecialClass } from '../utils/labels';
+import { loadModel, predict, predictSequence } from '../utils/modelInference';
+import { loadLabels, getLabels, getPhrasesLabels, getClassIndices, isSpecialClass } from '../utils/labels';
 
 const CONFIDENCE_THRESHOLD = 0.6;
 // There is no "nothing" or "space" class in the model (it only knows A-Z, 1-9).
@@ -34,6 +34,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
     const rafIdRef = useRef(null);
     const isPredictingRef = useRef(false);
     const smoothingBufferRef = useRef([]);
+    const sequenceBufferRef = useRef([]);
     const latestInputRef = useRef(null);
 
     // Load dependencies once
@@ -89,10 +90,29 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
             isPredictingRef.current = true;
 
             const inputData = latestInputRef.current;
-            const labels = getLabels();
+            const isPhrases = classFilter === 'phrases';
+            const labels = isPhrases ? getPhrasesLabels() : getLabels();
 
             try {
-                const { probabilities } = await predict(inputData);
+                let probabilities;
+                if (isPhrases) {
+                    if (sequenceBufferRef.current.length < 30) {
+                        isPredictingRef.current = false;
+                        return; // Not enough frames yet
+                    }
+                    // Flatten sequence
+                    const flatLandmarks = new Float32Array(30 * 2 * 21 * 3);
+                    const flatMask = new Float32Array(30 * 2);
+                    for (let i = 0; i < 30; i++) {
+                        flatLandmarks.set(sequenceBufferRef.current[i].landmarks, i * 2 * 21 * 3);
+                        flatMask.set(sequenceBufferRef.current[i].handMask, i * 2);
+                    }
+                    const result = await predictSequence({ landmarks: flatLandmarks, handMask: flatMask });
+                    probabilities = result.probabilities;
+                } else {
+                    const result = await predict(inputData);
+                    probabilities = result.probabilities;
+                }
                 
                 // Track prediction FPS
                 predCount++;
@@ -191,6 +211,11 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
             if (results) {
                 const inputData = buildLandmarkInput(results.rawLandmarks, results.frameWidth, results.frameHeight);
                 latestInputRef.current = inputData;
+                sequenceBufferRef.current.push(inputData);
+                if (sequenceBufferRef.current.length > 30) {
+                    sequenceBufferRef.current.shift();
+                }
+                
                 setLastInput({ raw: results.rawLandmarks, handedness: results.handedness, built: inputData });
                 setHandsCount(inputData.slots);
 
@@ -240,6 +265,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
                 // No hands detected
                 latestInputRef.current = null;
                 smoothingBufferRef.current = [];
+                sequenceBufferRef.current = [];
                 setStatus('no-hand');
                 setLabel('');
                 setConfidence(0);
@@ -259,6 +285,7 @@ export function useSignPrediction(videoRef, overlayRef, classFilter, enabled) {
             clearInterval(predInterval);
             // reset state on unmount/disable
             smoothingBufferRef.current = [];
+            sequenceBufferRef.current = [];
             latestInputRef.current = null;
             setStatus(modelLoaded ? 'no-hand' : 'loading');
         };

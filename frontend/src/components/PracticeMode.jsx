@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getLabels, isSpecialClass, getClassIndices, isLetter, isDigit } from '../utils/labels';
+import { getLabels, getPhrasesLabels, isSpecialClass, getClassIndices, isLetter, isDigit } from '../utils/labels';
 import { useHoldToCommit } from '../hooks/useHoldToCommit';
 import { SIGN_HINTS, MOTION_SIGNS } from '../data/signHints';
 import { CheckCircle2, ChevronRight, HelpCircle } from 'lucide-react';
@@ -15,7 +15,7 @@ export default function PracticeMode({ status, label, classFilter, setClassFilte
 
     // Pick a random target from the allowed set
     const pickTarget = useCallback((currentFilter, currentTarget = null) => {
-        const labels = getLabels();
+        const labels = currentFilter === 'phrases' ? getPhrasesLabels() : getLabels();
         if (!labels || labels.length === 0) return null;
 
         const indices = getClassIndices(currentFilter);
@@ -83,7 +83,7 @@ export default function PracticeMode({ status, label, classFilter, setClassFilte
             {/* Controls Row */}
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                 <div className="flex bg-cream-200 rounded-full p-1 shadow-inner">
-                    {['letters', 'numbers', 'both'].map((f) => (
+                    {['letters', 'numbers', 'both', 'phrases'].map((f) => (
                         <button
                             key={f}
                             onClick={() => setClassFilter(f)}
