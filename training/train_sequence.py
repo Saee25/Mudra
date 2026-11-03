@@ -80,7 +80,16 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
     return total_loss / total, correct / total
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Train Landmark LSTM for ISL phrases")
+    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--train-full", action="store_true", help="Train on 100% of the dataset (no validation split)")
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     
     npz_path = "data/landmarks/include_landmarks.npz"
     if not os.path.exists(npz_path):
@@ -88,22 +97,28 @@ def main():
         return
         
     dataset = SequenceLandmarkDataset(npz_path)
+    print(f"Loaded {len(dataset)} samples across {len(dataset.class_names)} classes.")
     
-    # Train/Val split (simple 80/20)
-    train_size = int(0.8 * len(dataset))
-    val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    if args.train_full:
+        print("[INFO] --train-full active: Training on 100% of the dataset.")
+        train_dataset = dataset
+        val_dataset = dataset # monitor on training data
+    else:
+        # Train/Val split (simple 80/20)
+        train_size = int(0.8 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
     
     num_classes = len(dataset.class_names)
     model = LandmarkLSTM(num_classes).to(device)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     
-    epochs = 50
+    epochs = args.epochs
     best_val_acc = 0.0
     best_model_state = None
     

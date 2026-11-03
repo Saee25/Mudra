@@ -19,7 +19,8 @@ function App() {
     // Core ML hook
     const { 
         status, label, confidence, top3, handsCount, 
-        detectionFps, predictionFps, modelLoaded, loadProgress
+        detectionFps, predictionFps, modelLoaded, loadProgress,
+        cropBox, lastInput
     } = useSignPrediction(videoRef, overlayRef, classFilter, true);
 
     // Initialize parity check on mount (dev only, can check console)

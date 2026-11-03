@@ -39,6 +39,6 @@ export default defineConfig({
     // ORT uses dynamic imports for WASM files which Vite tries to bundle incorrectly.
     // Since we copy the WASM to public/ and tell ORT where to find it, 
     // excluding it here fixes dev-mode loading issues.
-    exclude: ['onnxruntime-web']
+    exclude: ['onnxruntime-web', 'onnxruntime-web/wasm']
   }
 })

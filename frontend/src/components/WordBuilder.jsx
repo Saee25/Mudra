@@ -16,7 +16,12 @@ export default function WordBuilder({ status, label, classFilter, setClassFilter
     }, []);
 
     const handleCommit = useCallback((newLabel) => {
-        setTextBuffer(prev => prev + newLabel);
+        setTextBuffer(prev => {
+            if (newLabel.length > 1) {
+                return prev ? `${prev.trim()} ${newLabel} ` : `${newLabel} `;
+            }
+            return prev + newLabel;
+        });
         
         // Highlight animation trigger
         setLastCharCommitted(true);

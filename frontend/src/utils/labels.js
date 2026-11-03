@@ -17,7 +17,8 @@ export async function loadLabels() {
         
         if (phrasesMetaRes && phrasesMetaRes.ok) {
             const phrasesMeta = await phrasesMetaRes.json();
-            phrasesLabels = phrasesMeta.class_names || [];
+            const rawNames = phrasesMeta.class_names || [];
+            phrasesLabels = rawNames.map(name => name.replace(/^\d+\.\s*/, '').replace(/^Ex\.\s*/, '').trim());
         }
 
         // Check meta

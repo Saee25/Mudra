@@ -1,4 +1,4 @@
-import * as ort from 'onnxruntime-web';
+import * as ort from 'onnxruntime-web/wasm';
 
 // Set ORT environment variables
 ort.env.wasm.wasmPaths = import.meta.env.BASE_URL + "ort/";

@@ -56,7 +56,7 @@ if (!fs.existsSync(mediapipeTaskPath)) {
 console.log('\n--- MediaPipe Assets ---');
 copyDirWithStats(mediapipeWasmSrc, mediapipeWasmDst);
 
-// 3. Copy ONNX Runtime Web WASM (only plain WASM, skip jsep/jspi/asyncify)
+// 3. Copy ONNX Runtime Web WASM (only plain WASM, skip jsep/jspi/asyncify/webgl/webgpu)
 console.log('\n--- ONNX Runtime Web Assets ---');
 const ortWasmSrc = path.join(nodeModulesDir, 'onnxruntime-web', 'dist');
 const ortWasmDst = path.join(publicDir, 'ort');
@@ -65,8 +65,21 @@ if (!fs.existsSync(ortWasmSrc)) {
     console.warn(`Warning: ${ortWasmSrc} not found. Ensure npm install has run.`);
 } else {
     fs.mkdirSync(ortWasmDst, { recursive: true });
+    // Clean out old files in public/ort except .keep
+    for (const file of fs.readdirSync(ortWasmDst)) {
+        if (file !== '.keep') {
+            fs.unlinkSync(path.join(ortWasmDst, file));
+        }
+    }
+
     const allFiles = fs.readdirSync(ortWasmSrc);
-    const filesToCopy = allFiles.filter(f => f.endsWith('.wasm') || f.endsWith('.mjs'));
+    const skipKeywords = ['jsep', 'jspi', 'asyncify', 'webgl', 'webgpu', 'node', 'all'];
+    const filesToCopy = allFiles.filter(f => {
+        if (!f.endsWith('.wasm') && !f.endsWith('.mjs')) return false;
+        if (skipKeywords.some(keyword => f.includes(keyword))) return false;
+        return true;
+    });
+
     for (const file of filesToCopy) {
         const srcPath = path.join(ortWasmSrc, file);
         const dstPath = path.join(ortWasmDst, file);

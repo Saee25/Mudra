@@ -47,7 +47,11 @@ export default function PredictionOverlay({
 
                     {/* Main Prediction */}
                     <div className={`transition-opacity duration-300 ${isFaded ? 'opacity-50' : 'opacity-100'} text-center mt-6`}>
-                        <h2 className="font-display text-8xl md:text-[9rem] text-blush-800 leading-none">
+                        <h2 className={`font-display text-blush-800 leading-none break-words ${
+                            (label || '').length > 8 ? 'text-3xl md:text-5xl py-2' :
+                            (label || '').length > 3 ? 'text-5xl md:text-6xl py-2' :
+                            'text-8xl md:text-[9rem]'
+                        }`}>
                             {label || '-'}
                         </h2>
                     </div>

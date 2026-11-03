@@ -28,6 +28,8 @@ def get_args():
     parser = get_base_parser()
     parser.add_argument("--include-collected", action="store_true", help="Include samples from Collect mode")
     parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
+    parser.add_argument("--train-full", action="store_true", help="Train on 100% of the dataset (all train + val data merged)")
+    parser.add_argument("--balance-weights", action="store_true", help="Use inverse class frequency weights to balance under-represented classes (1, A, C)")
     return parser.parse_args()
 
 def main():
@@ -46,6 +48,10 @@ def main():
     class_names, train_paths, val_paths = resolve_classes_and_split(
         npz_path, args.outputs_dir, smoke_test=args.smoke_test
     )
+    
+    if args.train_full:
+        print(f"\n[INFO] --train-full active: Merging {len(train_paths)} train + {len(val_paths)} val paths into 100% full dataset ({len(train_paths | val_paths)} samples).")
+        train_paths = train_paths | val_paths
     
     num_classes = len(class_names)
     print(f"Classes: {num_classes}")
@@ -83,7 +89,17 @@ def main():
     total_params, trainable_params = count_parameters(model)
     print(f"LandmarkMLP Parameters: {total_params:,} (Trainable: {trainable_params:,})")
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+    class_weights = None
+    if args.balance_weights:
+        import numpy as np
+        labels_train = [train_dataset.labels[i] for i in range(len(train_dataset))]
+        counts = np.bincount(labels_train, minlength=num_classes)
+        counts = np.maximum(counts, 1)
+        weights = len(labels_train) / (num_classes * counts)
+        class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
+        print("Using inverse class frequency weights for loss balancing.")
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=LABEL_SMOOTHING)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     

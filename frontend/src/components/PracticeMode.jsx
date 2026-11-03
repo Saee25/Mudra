@@ -127,7 +127,11 @@ export default function PracticeMode({ status, label, classFilter, setClassFilte
                 ) : (
                     <>
                         <span className="text-xs uppercase tracking-widest text-ink-muted font-semibold mb-2">Show me</span>
-                        <h2 className="font-display text-7xl md:text-8xl text-blush-800 leading-none mb-6">
+                        <h2 className={`font-display text-blush-800 leading-none mb-6 text-center break-words ${
+                            (targetSign || '').length > 8 ? 'text-3xl md:text-4xl' :
+                            (targetSign || '').length > 3 ? 'text-5xl md:text-6xl' :
+                            'text-7xl md:text-8xl'
+                        }`}>
                             {targetSign || '-'}
                         </h2>
 
